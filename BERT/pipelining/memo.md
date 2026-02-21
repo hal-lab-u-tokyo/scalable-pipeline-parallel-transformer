@@ -1,0 +1,87 @@
+- _normalize_model_output_as_tuple(output: Any) -> Tuple[Any]:
+    - パイプライン並列処理において各ステージ間で送受信される出力の形式を一律にタプル形式に統一するための関数
+    - ユーザが定義するモデルの出力は Tensor，タプル，または torch.export によってリスト形式で返される場合もある．
+    - 中間ステージで Send/Recv 操作を行う際は，各要素がテンソルであることが前提となるためどの形式で出力されてもタプルに変換することで内部処理を簡素化し，一貫性を保つ．
+
+- class _RootArgPlaceholder:
+    - モデルの入力をラップするためのプレースホルダ
+    - パイプラインの最初のステージでは，入力が外部から直接供給される
+    - その際，入力の形状やdtypeなどの情報を軽量に保持したい
+    - そこで実データを持たないmetaテンソルに変換しておき，
+    - 以降の形状推論や通信バッファの初期化に活用する．
+    - 入力を統一的に扱えるようにすることで，後続の処理（たとえばrecvバッファの生成）をシンプルにし，不要なメモリ消費を防ぎつつ，必要なメタ情報だけで処理を進められる． 
+    - metaテンソルとは？
+        - データそのものは保持せず，形状，dtype，レイアウトなどのメタデータのみを持つテンソル
+        - 大きなデータを実際にロードしなくても計算グラフの形状推論やエラー検証に利用できる
+        - モデルをトレースする際や，各ステージ間でバッファのサイズや型を決定できる
+    - プレースホルダとは？
+        - まだ具体的なデータや値が割り当てられていない場所を示すための「仮の値」や「目印」
+    - 具体的には，以下のような役割を果たす
+
+- class _RecvInfo:
+    - パイプライン各ステージが前段階から受信する入力データの情報を管理するためのコンテナ
+    - 各ステージでは，前のステージから送られてくる活性化（中間結果）や，
+    - 逆伝播時に受け取る勾配などを送信元や受信先のバッファの情報とともに管理する
+    - ステージ間通信（Send/Recv）の際に受信すべきテンソルの情報を一元管理
+    - Fields:
+        - input_name: 受信する入力の名称．ログ出力時にどの入力かを識別するために使用．
+        - source: 送信元となるstage idx．
+        - buffer: 受信するデータを格納するために事前に割り当てられるテンソルバッファ
+
+- InputInfo: 
+    - パイプラインステージの入力として扱われるデータを表す型．
+    - 外部から直接与えられる入力（_RootArgPlaceholder）または前のステージから受信する入力（_RecvInfo）のいずれかとして扱えるように定義されている．
+    - これにより，ステージの内部処理をシンプルに保ちつつ，一貫して書ける
+
+- _make_tensor_from_meta:
+    - 既存のtensorまたはmeta tensor のメタ情報（形状，dtype，レイアウトなど）を元に，torch.empty を呼び出し，初期化されていない（未定義の値を持つ）テンソルを生成．
+
+- class _RevPipelineStageBase(ABC):
+    - パイプラインステージの抽象基底クラス
+    - Members:
+        - submod: torch.nn.Module: ステージが担当するサブモジュール
+        - stage_index: int: ステージのindex
+        - num_stages: int: パイプライン全体のステージ数
+        - device: torch.device: ステージが実行されるデバイス
+        - group: Optional[dist.ProcessGroup]: 通信に使用するプロセスグループ
+        - dw_builder: Optional[Callable[[], Callable[..., None]]]
+            - 逆伝播時の処理の一部をカスタムに行うための関数生成器．
+            - 指定があれば各マイクロバッチ毎に dw_runner 関数を生成し保存し
+            - 逆伝播の「重み更新」部分などを後から呼び出す際に使用
+        - backward_state: Dict[int, Tuple[Any, ...]]
+            - 各マイクロバッチ（チャンク）毎に，逆伝播を実行する際に必要な中間情報を保存．
+            - forward の出力（stage_output），入力値（input_values）や，出力に関する勾配情報
+        - dw_runner: Dict[int, Callable[..., None]]
+            - 各マイクロバッチ毎に，dw_runner 関数（重みの逆伝播処理を実行する関数）を格納
+            - backward_one_chunk の際に dw_builder の生成結果がすぐに呼ばれる
+            - または一旦キャッシュされた後で backward_weight_one_chunk で呼び出される．
+        - _outputs_meta: Optional[Tuple[torch.Tensor, ...]]
+            - 順計算により得られる出力の形状，dtype，レイアウト等のメタ情報を保持
+            - 各ステージ間の通信で，送信バッファ・受信バッファのサイズがこの情報に基づいて決定
+        - fwd_cache: Dict[int, Tuple[Any, List[torch.Tensor]]]
+            - 各マイクロバッチ毎に，順伝播の計算結果をキャッシュ
+            - 正規化された順計算結果とforward に使われた入力のテンソルのリストのタプル
+        - bwd_cache: Dict[int, Tuple[Optional[torch.Tensor], ...]]
+            - 各マイクロバッチ毎に，逆伝播で得られる勾配テンソルをキャッシュ
+            - forward のキャッシュされた入力に対して，計算された勾配が格納される
+        - output_chunks: List[Any]
+            - 各マイクロバッチごとの，順伝播の計算結果をリストに保存
+            - 最終的にはこれらの出力をmergeして全体の出力として利用
+        - args_recv_info: Dict[int, Tuple[InputInfo, ...]]
+            - 順伝播時の各マイクロバッチに対する，入力受信用の情報を格納
+            - get_fwd_recv_ops 
+        - act_send_info: Dict[int, List]
+            - 順伝播時の各マイクロバッチに対する，活性化送信用の情報を格納
+            - get_fwd_send_ops
+        - grad_recv_info: Dict
+            - 逆伝播時の各マイクロバッチに対する，勾配受信用の情報を格納
+        - grad_send_info: Optional[List]
+            - 逆伝播時の各マイクロバッチに対する，勾配送信用の情報を格納
+            - get_bwd_recv_ops
+        - chunks: Optional[int]
+            - バッチを分割したマイクロバッチ（チャンク）の総数
+
+    - __init__: 各ステージが必要とする基本的な情報および内部キャッシュや通信インフラの初期化
+    - _configure_outputs_meta: 
+    
+    

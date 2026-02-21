@@ -1,0 +1,9 @@
+Bootstrap: docker
+# Kaggle環境と同じ PyTorch 2.6.0 + CUDA 12.4 をベース
+From: pytorch/pytorch:2.6.0-cuda12.4-cudnn9-runtime
+
+%post
+    pip install --upgrade pip
+
+    # Kaggle環境で動いていたバージョンを指定
+    pip install transformers==4.53.3 datasets==4.4.1 accelerate==1.9.0 pandas matplotlib scikit-learn

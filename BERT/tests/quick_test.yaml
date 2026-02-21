@@ -1,0 +1,22 @@
+# テスト設定ファイルで、test_template.pyが読み込んでどのパラメータの組み合わせでテストするか定義
+
+parallel:
+  - {mode: "none", nproc: 1}
+  - {mode: "ddp",  nproc: 2}
+  - {mode: "fsdp", nproc: 2}
+  - {mode: "pp",   nproc: 2} # BERTではPP=2は少ないかも？テスト環境次第
+reversible : [false, true]
+is_pareprop: [false, true] # ★ Pareprop テスト用に追加
+dataset    : ["imdb"]     # ★ BERT データセットに変更
+autocast_dtype  : ["bf16"]
+batch_size : [64]       # ★ BERT 用に小さく変更 (要調整)
+num_epochs : 1
+timeout    : 3600 # ★ BERT は時間がかかる可能性があるので延長 (要調整)
+
+# ★ BERT モデルパラメータ (テスト用に固定値を設定)
+model: "bert"
+num_hidden_layers: 6 # PP=2なら割り切れるように
+hidden_size: 128
+num_attention_heads: 2
+max_position_embeddings: 128
+tokenizer_name: "bert-base-uncased" # dataloader.py で使う
