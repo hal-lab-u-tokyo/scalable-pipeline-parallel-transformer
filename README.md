@@ -68,7 +68,6 @@ The codebase is organized into two primary subdirectories: **BERT experiments (`
 │   ├── pipelining/            # Custom pipeline parallelism runtime (extends torch.distributed.pipelining)
 │   │   ├── stage.py           # Pipeline stage base abstraction
 │   │   ├── reversible_stage.py # Stage implementation for reversible computation
-│   │   ├── reversible_stage_with_pareprop.py # Stage implementation with Pareprop backward overlap
 │   │   ├── stage_with_cp.py   # Activation Checkpointing (CP) baseline stage
 │   │   ├── schedules.py       # Pipeline schedule implementations (e.g., 1F1B)
 │   │   ├── microbatch.py      # Micro-batch chunking and collation utilities
@@ -101,7 +100,7 @@ The codebase is organized into two primary subdirectories: **BERT experiments (`
     │   ├── vit_blocks.py      # PatchEmbedding, Multi-Head Attention, MLP
     │   ├── vit_stages.py      # Pipeline stages for Reversible ViT
     │   └── normal_vit_stages.py # Standard ViT pipeline stages
-    ├── pipelining/            # Custom pipeline runtime (reversible, Pareprop, 1F1B schedules)
+    ├── pipelining/            # Custom pipeline runtime (reversible, 1F1B schedules)
     ├── scripts/               # Experiment scripts (profiling and training on vision datasets)
     ├── src/                   # Core shared framework (engine, loaders, distributed env)
     └── tests/                 # Smoke tests
@@ -130,7 +129,6 @@ The codebase is organized into two primary subdirectories: **BERT experiments (`
 ### 3. `pipelining/` (Custom Pipeline Runtime)
 Built upon PyTorch's distributed pipelining framework (`torch.distributed.pipelining`):
 - `reversible_stage.py`: Discards intermediate forward activations and performs reverse reconstruction during the backward pass.
-- `reversible_stage_with_pareprop.py`: Implements **Pareprop** (Parallel Backward Propagation) by separating backward execution into input gradient propagation and weight gradient accumulation to overlap computation.
 - `stage_with_cp.py`: Activation Checkpointing (CP) baseline implementation.
 - `schedules.py`: Pipeline schedule orchestration (1F1B, etc.).
 
@@ -174,7 +172,7 @@ python BERT/scripts/prepare_dataset.py --outdir ./dataset
 ### 2. Running BERT Experiments
 
 #### (A) Profiling (Memory & Speedup with Batch Expansion)
-Run pipeline-parallel profiling with reversible computation and Pareprop:
+Run pipeline-parallel profiling with reversible computation :
 ```bash
 torchrun --nproc_per_node=8 BERT/main.py \
     --exp-mode profiling \
