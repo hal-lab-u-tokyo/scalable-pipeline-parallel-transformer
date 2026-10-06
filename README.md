@@ -264,6 +264,3 @@ If you find this work useful for your research, please cite:
 
 ---
 
-## 📄 License
-
-This project is licensed under Apache-2.0 / MIT. See individual file headers and `LICENSE` for details.
