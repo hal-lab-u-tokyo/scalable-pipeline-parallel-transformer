@@ -1,8 +1,6 @@
 # Scalable Pipeline-Parallel Training of Transformer with Batch Expansion Using Reversible Computation
 
 [![Conference](https://img.shields.io/badge/IEEE%20ICPADS%202026-Full%20Paper-blue.svg)](https://icpads2026.github.io/)
-[![PyTorch](https://img.shields.io/badge/PyTorch-2.6.0%2B-ee4c2c.svg)](https://pytorch.org/)
-[![License](https://img.shields.io/badge/License-Apache%202.0%20%2F%20MIT-green.svg)]()
 
 This repository contains the official implementation of the paper:
 > **"Scalable Pipeline-Parallel Training of Transformer with Batch Expansion Using Reversible Computation"**  
@@ -13,26 +11,27 @@ This repository contains the official implementation of the paper:
 
 ## 📖 Overview
 
-Training large Transformer models (such as BERT and Vision Transformer) poses significant challenges due to surging GPU memory requirements. While **Pipeline Parallelism (PP)** partitions model layers across multiple GPUs to enable distributed training, standard PP suffers from three fundamental bottlenecks:
-1. **Pipeline Bubbles (Idle Time)**: The startup (fill) and drain phases in pipeline execution introduce idle periods on GPUs, degrading hardware utilization.
-2. **Activation Memory Bottleneck**: Retaining intermediate activations for the backward pass restricts the maximum number of micro-batches that can fit into GPU memory without causing Out-of-Memory (OOM) errors.
-3. **Overhead of Recomputation**: Conventional Activation Checkpointing (CP) saves memory but incurs considerable forward recomputation overhead (~33%), which constrains overall training throughput.
+Training massive Transformer models (e.g., BERT and Vision Transformer) requires distributed parallel training due to device memory constraints. While **Pipeline Parallelism (PP)** is communication-efficient—relying primarily on point-to-point communication between adjacent GPUs—conventional PP suffers from critical memory bottlenecks:
 
-### 💡 Proposed Method: Reversible Pipeline Parallelism with Batch Expansion
+1. **Pipeline Buffering Overhead**: Input activations held in memory across pipeline stages scale linearly with the number of parallel GPUs ($\mathcal{O}(P)$).
+2. **Intermediate Activation Bottleneck**: Activations cached for backpropagation scale linearly with the number of layers per GPU ($\mathcal{O}(N)$), and grow proportionally with the input sequence length ($S$).
+3. **Throughput Penalty of Recomputation**: While conventional Activation Checkpointing mitigates memory growth, it still scales linearly with depth and GPU count, while introducing significant computational overhead.
 
-To address these challenges, this framework introduces:
+---
 
-1. **Reversible Computation for Activation Memory Elimination**:
-   - Transformer layers are reformulated using reversible residual blocks ($Y_1 = X_1 + \mathcal{F}(X_2)$, $Y_2 = X_2 + \mathcal{G}(Y_1)$).
-   - Intermediate activations are reconstructed on the fly from output activations ($X_2 = Y_2 - \mathcal{G}(Y_1)$, $X_1 = Y_1 - \mathcal{F}(X_2)$) during the backward pass instead of caching them in GPU memory during the forward pass.
-   - This drastically slashes activation memory from $O(L)$ to $O(1)$ without the redundant forward recomputation required by checkpointing.
+### 💡 Proposed Method: Fully Reversible PP with PaBER
 
-2. **Batch Expansion (Micro-Batch Scaling)**:
-   - By leveraging the memory budget freed by reversible computation, we scale up the number of micro-batches ($M$) within the same GPU memory capacity.
-   - Expanding micro-batches drastically shrinks the pipeline bubble ratio ($\frac{P-1}{M + P - 1}$, where $P$ is the number of pipeline stages), achieving substantial **throughput acceleration** and higher GPU utilization.
+To fundamentally resolve these scalability limits, this framework introduces:
 
-3. **Pareprop (Parallel Backward Propagation)**:
-   - Decouples weight gradient computation (`backward_weight`) from activation reconstruction and input gradient propagation (`backward_input`), overlapping communication and computation across pipeline stages.
+1. **Dual $\mathcal{O}(1)$ Memory Footprint via Fully Reversible Transformer**:
+   - Implements mathematically invertible Transformer blocks ($Y_1 = X_1 + \mathcal{F}(X_2)$, $Y_2 = X_2 + \mathcal{G}(Y_1)$).
+   - Reconstructs intermediate activations on the fly during the backward pass ($X_2 = Y_2 - \mathcal{G}(Y_1)$, $X_1 = Y_1 - \mathcal{F}(X_2)$), eliminating the need to cache them in global memory.
+   - Unlike prior work (uPP) which only decoupled memory from the number of GPUs, our approach achieves **dual independence $\mathcal{O}(1)$** with respect to both the **number of pipeline GPUs** and the **number of layers per GPU**.
+
+2. **PaBER (Pipeline-Parallelism-aware Batch Expansion with Reversibility)**:
+   - While reversible architectures typically suffer from throughput degradation due to recomputation overhead, PaBER leverages the drastic memory savings to **expand the micro-batch size** within the same memory budget.
+   - Increasing the micro-batch size significantly boosts hardware arithmetic intensity and GPU compute utilization (e.g., Tensor Core efficiency), amortizing the recomputation overhead.
+   - PaBER surpasses the training throughput of conventional activation checkpointing in most settings while maintaining a strictly lower memory footprint.
 
 ---
 
@@ -181,7 +180,6 @@ torchrun --nproc_per_node=8 BERT/main.py \
     --exp-mode profiling \
     --par-mode pp \
     --reversible \
-    --is_pareprop \
     --dataset imdb \
     --num-hidden-layers 24 \
     --hidden-size 768 \
@@ -223,7 +221,6 @@ torchrun --nproc_per_node=8 Vit/main.py \
     --exp-mode profiling \
     --par-mode pp \
     --reversible \
-    --is_pareprop \
     --dataset cifar-10 \
     --num-hidden-layers 12 \
     --hidden-size 768 \
@@ -244,7 +241,6 @@ torchrun --nproc_per_node=8 Vit/main.py \
 | `--exp-mode`, `-e` | `training`, `profiling`, `actv-err`, `acc` | `training` | Experiment pipeline mode to execute |
 | `--par-mode` | `none`, `pp`, `ddp`, `fsdp` | `none` | Parallelization strategy (`pp` for pipeline parallelism) |
 | `--reversible` | flag | `False` | Enable reversible residual blocks |
-| `--is_pareprop` | flag | `False` | Enable Pareprop (Parallel Backward Propagation) optimization |
 | `--checkpointing`| flag | `False` | Enable standard activation checkpointing (for baseline comparison) |
 | `--batch-size` | int | `256` | Global batch size per training step |
 | `--microbatch-size` | int | `64` | Batch size per micro-batch |
