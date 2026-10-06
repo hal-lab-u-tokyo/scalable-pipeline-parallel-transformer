@@ -3,8 +3,8 @@
 [![Conference](https://img.shields.io/badge/IEEE%20ICPADS%202026-Full%20Paper-blue.svg)](https://icpads2026.github.io/)
 
 This repository contains the official implementation of the paper:
-> **"Scalable Pipeline-Parallel Training of Transformer with Batch Expansion Using Reversible Computation"**  
-> *Shunta Seki, et al.*  
+> **"Scalable Pipeline-Parallel Training of Transformer with Batch Expansion Using Reversible Computation"**
+> Shunta Seki, Ryota Miyagi, Hiroshi Nakamura, and Hideki Takase*  
 > Accepted as a **Full Paper** at **The 32nd IEEE International Conference on Parallel and Distributed Systems (ICPADS 2026)**.
 
 ---
