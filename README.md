@@ -13,8 +13,8 @@ This repository contains the official implementation of the paper:
 
 Training massive Transformer models (e.g., BERT and Vision Transformer) requires distributed parallel training due to device memory constraints. While **Pipeline Parallelism (PP)** is communication-efficient—relying primarily on point-to-point communication between adjacent GPUs—conventional PP suffers from critical memory bottlenecks:
 
-1. **Pipeline Buffering Overhead**: Input activations held in memory across pipeline stages scale linearly with the number of parallel GPUs ($\mathcal{O}(P)$).
-2. **Intermediate Activation Bottleneck**: Activations cached for backpropagation scale linearly with the number of layers per GPU ($\mathcal{O}(N)$), and grow proportionally with the input sequence length ($S$).
+1. **Pipeline Buffering Overhead**: Input activations held in memory across pipeline stages scale linearly with the number of parallel GPUs ($O(P)$).
+2. **Intermediate Activation Bottleneck**: Activations cached for backpropagation scale linearly with the number of layers per GPU ($O(N)$), and grow proportionally with the input sequence length ($S$).
 3. **Throughput Penalty of Recomputation**: While conventional Activation Checkpointing mitigates memory growth, it still scales linearly with depth and GPU count, while introducing significant computational overhead.
 
 ---
@@ -24,8 +24,8 @@ Training massive Transformer models (e.g., BERT and Vision Transformer) requires
 To fundamentally resolve these scalability limits, this framework introduces:
 
 1. **Dual $\mathcal{O}(1)$ Memory Footprint via Fully Reversible Transformer**:
-   - Implements mathematically invertible Transformer blocks ($Y_1 = X_1 + \mathcal{F}(X_2)$, $Y_2 = X_2 + \mathcal{G}(Y_1)$).
-   - Reconstructs intermediate activations on the fly during the backward pass ($X_2 = Y_2 - \mathcal{G}(Y_1)$, $X_1 = Y_1 - \mathcal{F}(X_2)$), eliminating the need to cache them in global memory.
+   - Implements mathematically invertible Transformer blocks (($Y_1 = X_1 + \mathcal{F}(X_2), \quad Y_2 = X_2 + \mathcal{G}(Y_1)$)).
+   - Reconstructs intermediate activations on the fly during the backward pass ($X_2 = Y_2 - \mathcal{G}(Y_1), \quad X_1 = Y_1 - \mathcal{F}(X_2)$), eliminating the need to cache them in global memory.
    - Unlike prior work (uPP) which only decoupled memory from the number of GPUs, our approach achieves **dual independence $\mathcal{O}(1)$** with respect to both the **number of pipeline GPUs** and the **number of layers per GPU**.
 
 2. **PaBER (Pipeline-Parallelism-aware Batch Expansion with Reversibility)**:
