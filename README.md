@@ -255,7 +255,7 @@ If you find this work useful for your research, please cite:
 ```bibtex
 @inproceedings{seki2026scalable,
   title={Scalable Pipeline-Parallel Training of Transformer with Batch Expansion Using Reversible Computation},
-  author={Seki, Shunta and others},
+  author = {Seki, Shunta and Miyagi, Ryota and Nakamura, Hiroshi and Takase, Hideki},
   booktitle={Proceedings of the 32nd IEEE International Conference on Parallel and Distributed Systems (ICPADS)},
   year={2026},
   publisher={IEEE}
